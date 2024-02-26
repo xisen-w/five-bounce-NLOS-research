@@ -1,10 +1,11 @@
 % This document sets up the simulation of the measurement data and the reconstruction of the object 
 clear all;
+clc
 % setting
 N = 128; % Space Dimension
 M = 512; % Time Dimension 
 wall_size = 2; % Unit: m 
-bin_resolution = 32e-12; % Every time stamp 
+bin_rolution = 32e-12; % Every time stamp 
 c    = 3e8;    % Speed of light (meters per second)
 width = wall_size / 2;
 range = M.*c.*bin_resolution; % Maximum range for histogram
@@ -15,42 +16,24 @@ fpsf = fftn(psf);
 [mtx,mtxi] = resamplingOperator(M); %Rt & Rz 
 mtx = full(mtx);
 mtxi = full(mtxi);
-mask = zeros(1,128,128);
-mask(1,10:118,10:118) = 1;
-%% Creating the scences
 
-%for number = 1:3
+%% Creating the scence
+
+%Scene1
+
+for number = 1:3
 scene = zeros(512,128,128);
-    %switch number
-%             case {1}
-               temp = load('dragonscene.mat');
-               scene = temp.scene;
-               clear temp;
-               draw3D(double(scene),0.95,0,1);
-%             case {2}
-%             load('fk_50min.mat');
-%             fk(end-200:end,:,:) = 0;
-%             fk = flip(flip(fk,2),3);
-%             for i = 1:128
-%                 for j = 1:128]
-%                      [ref,loc] = max(fk(:,i,j));
-%                      if loc >100 && ref>2
-%                     scene(loc-100,i,j) = fk(loc,i,j);
-%                     end
-%                end
-%             end
-%             scene(1:80,:,:) = 0;
-%             draw3D(double(scene),0.95,0,1);
-%             case {3}
-%              temp = load('bikescene.mat');
-%              scene = temp.scene;
-%              clear temp;
-%              draw3D(double(scene),0.95,0,1);
-%     end
+    switch number
+            case {1}
+            scene(64,64,64) = 1;
+            case {2}
+            scene(64,86,:) = 1;
+            case {3}
+            scene(50:100, 39:89, 39:89) = 1;
+    end
 
 
-
-%threedshow(scene,1,1); %Shows the image of our convoluted
+%imshow(squeeze(max(scene,1)),[]) Shows the image of our convoluted
 %data/but got an error now 
 
 %% Calculate the Measurements 
@@ -68,7 +51,7 @@ data  = reshape(mtxi*tdata(:,:),[M N N]);
 %Distance Vanishing; 
 grid_z = repmat(linspace(0,1,M)',[1 N N]);
 grid_z(1,:,:) = 1;
-data = data./(grid_z.^2);  
+data = data./(grid_z.^4);  
 threedshow(data,1,1);
 %% 2nd Bounce Forward
 z0 = 0.2; %0.2 m
@@ -81,19 +64,17 @@ tdata = ifftn(fftn(tscene).*fpsf2);
 final_measurement = tdata(1:end./2,1:end./2,1:end./2);
 
 threedshow(final_measurement,1,1);
+
 %% Reconstruction
-recon_1 = LCT2(final_measurement,M,N,fpsf2,1);%first reconstruction -using fpsf2
-recon_1(1:60,:,:) = 0; 
-recon_1 = recon_1.*mask;
+
+recon_1 = LCT2(final_measurement,M,N,fpsf2,5);%first reconstruction -using fpsf2
 threedshow(recon_1,1,1);
 %%
-recon_2 = LCT(recon_1,M,N,fpsf,mtx,mtxi,1);%second reconstruction -using fpsf 
-recon_2(end-300:end,:,:) = 0;
+recon_2 = LCT(recon_1,M,N,fpsf,mtx,mtxi,5);%second reconstruction -using fpsf 
 threedshow(recon_2 ,1,1);
 %show the result 
-draw3D(recon_2,0.95,0,1)
 
-%end
+end
 
 
 function psf = definePsf(U,V,slope)
@@ -117,8 +98,7 @@ function psf2 = definePsf2(U,V,z0,width,range)
     y = linspace(-2*width,2*width,2.*U);
     z = linspace(0,2*(range/2),2.*V);
     [grid_z,grid_y,grid_x] = ndgrid(z,y,x);
-
-
+    
     psf2 = abs( sqrt(grid_x.^2+grid_y.^2+z0.^2)-grid_z ); %z0 is not defined 
     psf2 = double(psf2 == repmat(min(psf2,[],1),[2.*V 1 1]));
     psf2 = psf2./sum(psf2(:,U,U));
@@ -145,7 +125,7 @@ end
 function vol = LCT(data,M,N,fpsf,mtx,mtxi,snr)
 tic;%Counting Time 
 grid_z = repmat(linspace(0,1,M)',[1 N N]);
-data = data.*(grid_z.^2);
+data = data.*(grid_z.^2); 
 invpsf = conj(fpsf) ./ (abs(fpsf).^2 + 1./snr);
 
 % Step 2: Resample time axis and pad result
@@ -165,7 +145,7 @@ display(sprintf(['Reconstructed volume of size %d x %d x %d '...
     'in %f seconds'], size(vol,3),size(vol,2),size(vol,1),time_elapsed));
 end
 
-function vol = LCT2(data,M,N,fpsf,snr) 
+function vol = LCT2(data,M,N,fpsf,snr)
 tic;%Counting Time 
 
 invpsf = conj(fpsf) ./ (abs(fpsf).^2 + 1./snr);

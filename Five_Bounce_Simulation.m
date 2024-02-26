@@ -1,5 +1,5 @@
 % This document sets up the simulation of the measurement data and the reconstruction of the object 
-clear all;
+
 % setting
 N = 128; % Space Dimension
 M = 512; % Time Dimension 
@@ -15,42 +15,14 @@ fpsf = fftn(psf);
 [mtx,mtxi] = resamplingOperator(M); %Rt & Rz 
 mtx = full(mtx);
 mtxi = full(mtxi);
-mask = zeros(1,128,128);
-mask(1,10:118,10:118) = 1;
-%% Creating the scences
 
-%for number = 1:3
+%% Creating the scence
+
+%Scene1 
 scene = zeros(512,128,128);
-    %switch number
-%             case {1}
-               temp = load('dragonscene.mat');
-               scene = temp.scene;
-               clear temp;
-               draw3D(double(scene),0.95,0,1);
-%             case {2}
-%             load('fk_50min.mat');
-%             fk(end-200:end,:,:) = 0;
-%             fk = flip(flip(fk,2),3);
-%             for i = 1:128
-%                 for j = 1:128]
-%                      [ref,loc] = max(fk(:,i,j));
-%                      if loc >100 && ref>2
-%                     scene(loc-100,i,j) = fk(loc,i,j);
-%                     end
-%                end
-%             end
-%             scene(1:80,:,:) = 0;
-%             draw3D(double(scene),0.95,0,1);
-%             case {3}
-%              temp = load('bikescene.mat');
-%              scene = temp.scene;
-%              clear temp;
-%              draw3D(double(scene),0.95,0,1);
-%     end
+scene(128,64,64) = 1;
 
-
-
-%threedshow(scene,1,1); %Shows the image of our convoluted
+%imshow(squeeze(max(scene,1)),[]) Shows the image of our convoluted
 %data/but got an error now 
 
 %% Calculate the Measurements 
@@ -65,35 +37,70 @@ tdata = tdata(1:end./2,1:end./2,1:end./2);
 % *R_t^(-1)/Measurements
 data  = reshape(mtxi*tdata(:,:),[M N N]); 
 
-%Distance Vanishing; 
+%Reshaping the measurements 
 grid_z = repmat(linspace(0,1,M)',[1 N N]);
 grid_z(1,:,:) = 1;
-data = data./(grid_z.^2);  
-threedshow(data,1,1);
+data = data./(grid_z.^4); %Distance Vanishing; Why do we do this? 
 %% 2nd Bounce Forward
-z0 = 0.2; %0.2 m
-psf2 = definePsf2(N,M,z0,width,range);
-fpsf2 = fftn(psf2);%inverse psf 
-%final_measurement = convn(data,psf2,'same');
-tscene = zeros(2.*M,2.*N,2.*N);
-tscene(1:end./2,1:end./2,1:end./2)  = data;
-tdata = ifftn(fftn(tscene).*fpsf2);
-final_measurement = tdata(1:end./2,1:end./2,1:end./2);
+psf2 = definePsf2(N,M);%Defined psf2, without N&M, not sure if it works
+final_measurement = convn(data,psf2,'same');
 
-threedshow(final_measurement,1,1);
+
+
 %% Reconstruction
-recon_1 = LCT2(final_measurement,M,N,fpsf2,1);%first reconstruction -using fpsf2
-recon_1(1:60,:,:) = 0; 
-recon_1 = recon_1.*mask;
-threedshow(recon_1,1,1);
-%%
-recon_2 = LCT(recon_1,M,N,fpsf,mtx,mtxi,1);%second reconstruction -using fpsf 
-recon_2(end-300:end,:,:) = 0;
-threedshow(recon_2 ,1,1);
-%show the result 
-draw3D(recon_2,0.95,0,1)
+fpsf2 = fftn(psf2);%inverse psf 
+recon_1 = LCT(final_measurement,M,N,fpsf2,mtx,mtxi,0.1);%first reconstruction -using fpsf2
+recon_2 = LCT(recon_1,M,N,fpsf,mtx,mtxi,0.1);%second reconstruction -using fpsf 
 
-%end
+%show the result 
+%threedshow(recon_2,range,width); not working somehow/unrecognised function
+
+z_offset = 30;
+
+tic_z = linspace(0,range./2,size(recon_2,1));
+tic_y = linspace(-width,width,size(recon_2,2));
+tic_x = linspace(-width,width,size(recon_2,3));
+
+% Crop and flip reconstructed volume for visualization
+ind = round(M.*2.*width./(range./2));
+recon_2 = recon_2(:,:,end:-1:1);
+recon_2 = recon_2((1:ind)+z_offset,:,:);
+
+tic_z = tic_z((1:ind)+z_offset);
+
+% View result
+figure('pos',[10 10 900 300]);
+
+subplot(1,3,1);
+imagesc(tic_x,tic_y,squeeze(max(recon_2,[],1)));
+title('Front view');
+set(gca,'XTick',linspace(min(tic_x),max(tic_x),3));
+set(gca,'YTick',linspace(min(tic_y),max(tic_y),3));
+xlabel('x (m)');
+ylabel('y (m)');
+colormap('gray');
+axis square;
+
+subplot(1,3,2);
+imagesc(tic_x,tic_z,squeeze(max(recon_2,[],2)));
+title('Top view');
+set(gca,'XTick',linspace(min(tic_x),max(tic_x),3));
+set(gca,'YTick',linspace(min(tic_z),max(tic_z),3));
+xlabel('x (m)');
+ylabel('z (m)');
+colormap('gray');
+axis square;
+
+subplot(1,3,3);
+imagesc(tic_z,tic_y,squeeze(max(recon_2,[],3))')
+title('Side view');
+set(gca,'XTick',linspace(min(tic_z),max(tic_z),3));
+set(gca,'YTick',linspace(min(tic_y),max(tic_y),3));
+xlabel('z (m)');
+ylabel('y (m)');
+colormap('gray');
+axis square;
+
 
 
 function psf = definePsf(U,V,slope)
@@ -111,19 +118,19 @@ function psf = definePsf(U,V,slope)
     psf = circshift(psf,[0 U U]);
 end
 
-function psf2 = definePsf2(U,V,z0,width,range)
+function psf = definePsf2(U,V)
     % Local function to compute NLOS blur kernel
-    x = linspace(-2*width,2*width,2.*U);
-    y = linspace(-2*width,2*width,2.*U);
-    z = linspace(0,2*(range/2),2.*V);
+    x = linspace(-1,1,2.*U);
+    y = linspace(-1,1,2.*U);
+    z = linspace(0,2,2.*V);
     [grid_z,grid_y,grid_x] = ndgrid(z,y,x);
 
-
-    psf2 = abs( sqrt(grid_x.^2+grid_y.^2+z0.^2)-grid_z ); %z0 is not defined 
+    z0 = 10;%We Arbiturarily defined it as 5m
+    psf2 = sqrt(grid_x.^2+grid_y.^2+z0.^2)-grid_z; %z0 is not defined 
     psf2 = double(psf2 == repmat(min(psf2,[],1),[2.*V 1 1]));
     psf2 = psf2./sum(psf2(:,U,U));
     psf2 = psf2./norm(psf2(:));
-    psf2 = circshift(psf2,[0 U U]);
+    psf = circshift(psf2,[0 U U]);
 end
 
 function [mtx,mtxi] = resamplingOperator(M)
@@ -158,25 +165,6 @@ tvol = tvol(1:end./2,1:end./2,1:end./2);
 
 % Step 4: Resample depth axis and clamp results
 vol  = reshape(mtxi*tvol(:,:),[M N N]);
-vol  = max(real(vol),0);
-time_elapsed = toc;
-
-display(sprintf(['Reconstructed volume of size %d x %d x %d '...
-    'in %f seconds'], size(vol,3),size(vol,2),size(vol,1),time_elapsed));
-end
-
-function vol = LCT2(data,M,N,fpsf,snr) 
-tic;%Counting Time 
-
-invpsf = conj(fpsf) ./ (abs(fpsf).^2 + 1./snr);
-
-% Step 2: Resample time axis and pad result
-tdata = zeros(2.*M,2.*N,2.*N);
-tdata(1:end./2,1:end./2,1:end./2)  = data;
-
-% Step 3: Convolve with inverse filter and unpad result
-tvol = ifftn(fftn(tdata).*invpsf);
-vol = tvol(1:end./2,1:end./2,1:end./2);
 vol  = max(real(vol),0);
 time_elapsed = toc;
 
